@@ -3,38 +3,135 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>School Project Search Engine</title>
+    <title>My Subdomain Web Browser</title>
     <style>
-        /* Clean, modern styling to make it look native to your subdomain */
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px auto;
-            max-width: 800px;
-            padding: 0 20px;
-            background-color: #f9f9f9;
+        * {
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #2c3e50;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* Top Browser Bar Window Controls & URL Input */
+        .browser-bar {
+            background-color: #34495e;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            z-index: 10;
+        }
+        .window-dots {
+            display: flex;
+            gap: 6px;
+        }
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .dot-red { background-color: #ff5f56; }
+        .dot-yellow { background-color: #ffbd2e; }
+        .dot-green { background-color: #27c93f; }
+        
+        .address-bar {
+            flex: 1;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 20px;
+            font-size: 14px;
+            outline: none;
+            background-color: #f1f2f6;
             color: #333;
         }
-        h1 {
-            text-align: center;
-            color: #222;
+        .browser-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
         }
-        .search-container {
-            margin-top: 30px;
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        .browser-btn:hover {
+            background-color: #2980b9;
+        }
+        
+        /* Information Disclaimer Banner */
+        .info-banner {
+            background-color: #f39c12;
+            color: #fff;
+            padding: 6px 20px;
+            font-size: 13px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        /* Viewport Frame Container */
+        .browser-viewport {
+            flex: 1;
+            background-color: #fff;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
         }
     </style>
 </head>
 <body>
 
-    <h1>Project Search Center</h1>
+    <div class="browser-bar">
+        <div class="window-dots">
+            <div class="dot dot-red"></div>
+            <div class="dot dot-yellow"></div>
+            <div class="dot dot-green"></div>
+        </div>
+        
+        <input type="text" id="url-input" class="address-bar" placeholder="Type a full URL (e.g., https://example.com)...">
+        <button onclick="launchURL()" class="browser-btn">Go</button>
+    </div>
     
-    <div class="search-container">
-        <script async src="https://cse.google.com/cse.js?cx=275ece6ab605c4429"></script>
-        <div class="gcse-search"></div>
+    <div class="info-banner">
+        🔒 Security Note: Major websites (like Google, YouTube, Wikipedia) use protection settings that block them from running inside other web frames.
     </div>
 
+    <div class="browser-viewport">
+        <iframe id="web-viewport" src="https://web.whatsapp.com"></iframe>
+    </div>
+
+    <script>
+        function launchURL() {
+            const inputField = document.getElementById('url-input');
+            let targetURL = inputField.value.trim();
+            const frameViewport = document.getElementById('web-viewport');
+            
+            if (!targetURL) return;
+
+            // Automatically prepend security protocol if user drops it (e.g. typing example.com)
+            if (!targetURL.startsWith('http://') && !targetURL.startsWith('https://')) {
+                targetURL = 'https://' + targetURL;
+            }
+
+            // Update the window source link instantly
+            frameViewport.src = targetURL;
+        }
+
+        // Allow pressing the "Enter" keyboard key to submit
+        document.getElementById('url-input').addEventListener('keypress', function (event) {
+            if (event.key === 'Enter') {
+                launchURL();
+            }
+        });
+    </script>
 </body>
 </html>
