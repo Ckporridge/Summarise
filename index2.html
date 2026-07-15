@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Top-Down Tactical Operator</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0f140f;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        #game-wrapper {
+            position: relative;
+            border: 4px solid #2e3d2e;
+            background-color: #1b241b;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
+        }
+
+        canvas {
+            display: block;
+        }
+
+        /* UI Overlays */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 800px;
+            height: 600px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 20, 15, 0.9);
+            box-sizing: border-box;
+            z-index: 10;
+        }
+
+        h1 {
+            color: #4dff4d;
+            font-size: 42px;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(77, 255, 77, 0.5);
+        }
+
+        .menu-btn {
+            background: #2e3d2e;
+            color: #4dff4d;
+            border: 2px solid #4dff4d;
+            padding: 12px 30px;
+            font-size: 18px;
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.2s;
+        }
+
+        .menu-btn:hover {
+            background: #4dff4d;
+            color: #0f140f;
+            box-shadow: 0 0 15px #4dff4d;
+        }
+
+        /* Loadout Section */
+        .loadout-container {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .loadout-card {
+            border: 2px dashed #555;
+            padding: 15px;
+            text-align: center;
+            width: 120px;
+            cursor: pointer;
+            background: rgba(0,0,0,0.3);
+        }
+
+        .loadout-card.selected {
+            border-color: #4dff4d;
+            background: rgba(77, 255, 77, 0.1);
+        }
+
+        /* HUD elements */
+        #hud {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 5;
+        }
+
+        .hud-item {
+            background: rgba(10, 15, 10, 0.85);
+            padding: 8px 15px;
+            border-radius: 4px;
+            border: 1px solid #2e3d2e;
+        }
+
+        #health { color: #ff4d4d; }
+        #weapon-info { color: #4dff4d; }
+        #score { color: #ffd700; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="game-wrapper">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div id="hud" class="hidden">
+            <div id="health" class="hud-item">HP: 100</div>
+            <div id="weapon-info" class="hud-item">WEAPON: PISTOL | AMMO: --</div>
+            <div id="score" class="hud-item">SCORE: 0</div>
+        </div>
+
+        <div id="main-menu" class="overlay">
+            <h1>TACTICAL OPERATOR</h1>
+            <p style="color: #888;">SELECT YOUR DEPLOYMENT LOADOUT</p>
+            
+            <div class="loadout-container">
+                <div class="loadout-card selected" onclick="selectLoadout('PISTOL', this)">
+                    <h3>PISTOL</h3>
+                    <span style="font-size:11px; color:#aaa;">Infinite Reserve Ammo</span>
+                </div>
+                <div class="loadout-card" onclick="selectLoadout('RIFLE', this)">
+                    <h3>RIFLE</h3>
+                    <span style="font-size:11px; color:#aaa;">Full Auto Combat</span>
+                </div>
+                <div class="loadout-card" onclick="selectLoadout('SHOTGUN', this)">
+                    <h3>SHOTGUN</h3>
+                    <span style="font-size:11px; color:#aaa;">High CQB Spread</span>
+                </div>
+            </div>
+
+            <button class="menu-btn" onclick="startGame()">DEPLOY TO ZONE</button>
+        </div>
+
+        <div id="game-over-menu" class="overlay hidden">
+            <h1 style="color: #ff3333;">MISSION FAILED</h1>
+            <p id="final-stats" style="font-size: 18px; margin-bottom: 20px;"></p>
+            <button class="menu-btn" onclick="showMainMenu()">RETURN TO HQ</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // UI Target nodes
+        const hud = document.getElementById('hud');
+        const healthHud = document.getElementById('health');
+        const weaponHud = document.getElementById('weapon-info');
+        const scoreHud = document.getElementById('score');
+        const mainMenu = document.getElementById('main-menu');
+        const gameOverMenu = document.getElementById('game-over-menu');
+        const finalStats = document.getElementById('final-stats');
+
+        // Weapon Blueprint Data
+        const WEAPONS = {
+            PISTOL: { name: "PISTOL", fireRate: 350, damage: 34, bulletSpeed: 13, spread: 0.04, maxAmmo: 12, reserve: Infinity, automatic: false },
+            RIFLE: { name: "ASSAULT RIFLE", fireRate: 130, damage: 22, bulletSpeed: 15, spread: 0.09, maxAmmo: 30, reserve: 90, automatic: true },
+            SHOTGUN: { name: "SHOTGUN", fireRate: 750, damage: 16, bulletSpeed: 11, spread: 0.28, maxAmmo: 8, reserve: 24, automatic: false, pellets: 6 }
+        };
+
+        // Core Systems Global State
+        let gameState = "MENU"; // MENU, PLAYING, GAMEOVER
+        let selectedWeaponKey = "PISTOL";
+        let player, keys, mouse;
+        let bullets, enemies, chests, items, particles, splatters, walls;
+        let lastShotTime, nextSpawnTime, nextChestTime;
+        let audioCtx = null, musicInterval = null;
+
+        // Initialize Input Arrays
+        keys = { w: false, a: false, s: false, d: false, r: false };
+        mouse = { x: 0, y: 0, isDown: false };
+
+        window.addEventListener('keydown', e => { if (e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = true; });
+        window.addEventListener('keyup', e => { if (e.key.toLowerCase() in keys) keys[e.key.toLowerCase()] = false; });
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+        canvas.addEventListener('mousedown', e => {
+            if (e.button === 0 && gameState === "PLAYING") {
+                mouse.isDown = true;
+                if (!player.weapon.automatic) fireActiveWeapon();
+            }
+        });
+        window.addEventListener('mouseup', e => { if (e.button === 0) mouse.isDown = false; });
+
+        // --- AUDIO ENGINE USING WEB AUDIO API (Procedural Music & SFX) ---
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            startProceduralMusic();
+        }
+
+        function playSynthSound(freq, type, duration, vol=0.1) {
+            if (!audioCtx) return;
+            let osc = audioCtx.createOscillator();
+            let gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function startProceduralMusic() {
+            let notes = [110, 110, 130, 110, 146, 110, 130, 165]; // Tactical base line loop
+            let step = 0;
+            musicInterval = setInterval(() => {
+                if (gameState === "PLAYING") {
+                    playSynthSound(notes[step % notes.length], 'sawtooth', 0.25, 0.04);
+                    step++;
+                }
+            }, 250);
+        }
+
+        // --- GAME PLAY LOGIC ---
+        function selectLoadout(weaponKey, element) {
+            selectedWeaponKey = weaponKey;
+            document.querySelectorAll('.loadout-card').forEach(c => c.classList.remove('selected'));
+            element.classList.add('selected');
+            playSynthSound(440, 'triangle', 0.1, 0.1);
+        }
+
+        function buildMapObstacles() {
+            walls = [];
+            // Spawn some static tactical cover blocks across the map grid
+            const configs = [
+                {x: 200, y: 150, w: 40, h: 120},
+                {x: 550, y: 150, w: 40, h: 120},
+                {x: 320, y: 400, w: 160, h: 40}
+            ];
+            configs.forEach(c => walls.push(c));
+        }
+
+        function startGame() {
+            initAudio();
+            mainMenu.classList.add('hidden');
+            gameOverMenu.classList.add('hidden');
+            hud.classList.remove('hidden');
+            gameState = "PLAYING";
+
+            // Initialize entities
+            player = {
+                x: 400, y: 480, radius: 14, speed: 3.5, hp: 100, score: 0,
+                weapon: JSON.parse(JSON.stringify(WEAPONS[selectedWeaponKey])), // deep copy
+                ammoInClip: WEAPONS[selectedWeaponKey].maxAmmo,
+                angle: 0, isReloading: false, reloadTimer: 0
+            };
+
+            bullets = []; enemies = []; chests = []; items = []; particles = []; splatters = [];
+            lastShotTime = 0; nextSpawnTime = 0; nextChestTime = 0;
+
+            buildMapObstacles();
+            updateHudDisplay();
+            playSynthSound(587, 'square', 0.4, 0.1);
+        }
+
+        function checkWallCollision(x, y, radius) {
+            for (let w of walls) {
+                let closestX = Math.max(w.x, Math.min(x, w.x + w.w));
+                let closestY = Math.max(w.y, Math.min(y, w.y + w.h));
+                let distX = x - closestX;
+                let distY = y - closestY;
+                if ((distX * distX + distY * distY) < (radius * radius)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function fireActiveWeapon() {
+            if (player.isReloading) return;
+            if (player.ammoInClip <= 0) {
+                // Out of ammo click
+                playSynthSound(800, 'triangle', 0.05, 0.05);
+                startReload();
+                return;
+            }
+
+            const now = Date.now();
+            if (now - lastShotTime < player.weapon.fireRate) return;
+            lastShotTime = now;
+
+            player.ammoInClip--;
+            updateHudDisplay();
+            playSynthSound(180, 'sawtooth', 0.12, 0.15); // Shooting audio synth
+
+            if (player.weapon.name === "SHOTGUN") {
+                for (let i = 0; i < player.weapon.pellets; i++) {
+                    let spreadAngle = player.angle + (Math.random() - 0.5) * player.weapon.spread;
+                    spawnBullet(spreadAngle);
+                }
+            } else {
+                let spreadAngle = player.angle + (Math.random() - 0.5) * player.weapon.spread;
+                spawnBullet(spreadAngle);
+            }
+        }
+
+        function spawnBullet(angle) {
+            bullets.push({
+                x: player.x + Math.cos(player.angle) * player.radius,
+                y: player.y + Math.sin(player.angle) * player.radius,
+                vx: Math.cos(angle) * player.weapon.bulletSpeed,
+                vy: Math.sin(angle) * player.weapon.bulletSpeed,
+                damage: player.weapon.damage
+            });
+        }
+
+        function startReload() {
+            if (player.isReloading || player.weapon.reserve === 0 || player.ammoInClip === player.weapon.maxAmmo) return;
+            player.isReloading = true;
+            player.reloadTimer = 70; // frames
+            playSynthSound(350, 'sine', 0.2, 0.08);
+        }
+
+        function completeReload() {
+            player.isReloading = false;
+            let needed = player.weapon.maxAmmo - player.ammoInClip;
+            if (player.weapon.reserve === Infinity) {
+                player.ammoInClip = player.weapon.maxAmmo;
+            } else {
+                let transfer = Math.min(needed, player.weapon.reserve);
+                player.weapon.reserve -= transfer;
+                player.ammoInClip += transfer;
+            }
+            updateHudDisplay();
+            playSynthSound(500, 'triangle', 0.1, 0.1);
+        }
+
+        function addSplatter(x, y, baseColor) {
+            // Persistent impact markings painted down onto ground array layers
+            for(let i=0; i<4; i++) {
+                splatters.push({
+                    x: x + (Math.random() - 0.5) * 15,
+                    y: y + (Math.random() - 0.5) * 15,
+                    radius: Math.random() * 6 + 3,
+                    color: baseColor
+                });
+            }
+            if (splatters.length > 300) splatters.shift(); // Bound memory constraints
+        }
+
+        function spawnEnemyUnit() {
+            let x, y;
+            // Roll dice to spawn along outside margins
+            if (Math.random() < 0.5) {
+                x = Math.random() < 0.5 ? -20 : canvas.width + 20;
+                y = Math.random() * canvas.height;
+            } else {
+                x = Math.random() * canvas.width;
+                y = Math.random() < 0.5 ? -20 : canvas.height + 20;
+            }
+
+            let isHeavy = Math.random() < 0.3;
+            enemies.push({
+                x: x, y: y,
+                radius: isHeavy ? 17 : 12,
+                speed: isHeavy ? 1.4 : 2.5,
+                hp: isHeavy ? 90 : 35,
+                maxHp: isHeavy ? 90 : 35,
+                color: isHeavy ? "#8b1a1a" : "#d94141",
+                damage: isHeavy ? 30 : 12,
+                points: isHeavy ? 250 : 100
+            });
+        }
+
+        function handleSpawningItems() {
+            let now = Date.now();
+            if (now > nextChestTime && items.length < 4) {
+                nextChestTime = now + 7000 + Math.random() * 5000;
+                
+                let isMedkit = Math.random() < 0.4;
+                let rx, ry;
+                // Keep testing coordinates until finding an open spot outside the wall blocks
+                do {
+                    rx = Math.random() * (canvas.width - 100) + 50;
+                    ry = Math.random() * (canvas.height - 100) + 50;
+                } while(checkWallCollision(rx, ry, 15));
+
+                items.push({
+                    x: rx, y: ry,
+                    type: isMedkit ? "MEDKIT" : "AMMO",
+                    color: isMedkit ? "#ff3366" : "#3399ff",
+                    radius: 10
+                });
+            }
+        }
+
+        function updateHudDisplay() {
+            healthHud.textContent = `HP: ${Math.max(0, player.hp)}`;
+            let reserveStr = player.weapon.reserve === Infinity ? "INF" : player.weapon.reserve;
+            let status = player.isReloading ? "RELOADING..." : `${player.ammoInClip} / ${reserveStr}`;
+            weaponHud.textContent = `WEAPON: ${player.weapon.name} | AMMO: ${status}`;
+            scoreHud.textContent = `SCORE: ${player.score}`;
+        }
+
+        function update() {
+            if (gameState !== "PLAYING") return;
+
+            // 1. Reload mechanics execution
+            if (player.isReloading) {
+                player.reloadTimer--;
+                if (player.reloadTimer <= 0) completeReload();
+            }
+            if (keys.r && !player.isReloading) startReload();
+
+            // 2. Processing Movement Input with Basic Slideways Wall Collision Blocking
+            let mx = 0, my = 0;
+            if (keys.w) my -= 1;
+            if (keys.s) my += 1;
+            if (keys.a) mx -= 1;
+            if (keys.d) mx += 1;
+
+            if (mx !== 0 && my !== 0) { mx *= 0.7071; my *= 0.7071; }
+
+            let nextX = player.x + mx * player.speed;
+            let nextY = player.y + my * player.speed;
+
+            if (!checkWallCollision(nextX, player.y, player.radius)) player.x = nextX;
+            if (!checkWallCollision(player.x, nextY, player.radius)) player.y = nextY;
+
+            player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+            player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+            player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+
+            if (mouse.isDown && player.weapon.automatic) fireActiveWeapon();
+
+            // 3. Projectile Updates
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                let b = bullets[i];
+                b.x += b.vx;
+                b.y += b.vy;
+
+                // Wall hits
+                if (checkWallCollision(b.x, b.y, 3)) {
+                    bullets.splice(i, 1);
+                    continue;
+                }
+                // Out of screen borders bound check
+                if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+                    bullets.splice(i, 1);
+                }
+            }
+
+            // 4. Combat Management Processing loops
+            let now = Date.now();
+            if (now > nextSpawnTime) {
+                spawnEnemyUnit();
+                nextSpawnTime = now + Math.max(500, 2200 - player.score * 0.08);
+            }
+
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                let e = enemies[i];
+                let eAngle = Math.atan2(player.y - e.y, player.x - e.x);
+                
+                let eNextX = e.x + Math.cos(eAngle) * e.speed;
+                let eNextY = e.y + Math.sin(eAngle) * e.speed;
+
+                // Simple pathing adjustments around wall shapes
+                if (!checkWallCollision(eNextX, e.y, e.radius)) e.x = eNextX;
+                if (!checkWallCollision(e.x, eNextY, e.radius)) e.y = eNextY;
+
+                // Melee Strike Collision against target Player asset module
+                let distToPlayer = Math.hypot(player.x - e.x, player.y - e.y);
+                if (distToPlayer < player.radius + e.radius) {
+                    player.hp -= e.damage;
+                    addSplatter(player.x, player.y, "rgba(200, 20, 20, 0.6)");
+                    playSynthSound(120, 'sine', 0.15, 0.2);
+                    enemies.splice(i, 1);
+                    updateHudDisplay();
+
+                    if (player.hp <= 0) {
+                        gameState = "GAMEOVER";
+                        hud.classList.add('hidden');
+                        gameOverMenu.classList.remove('hidden');
+                        finalStats.textContent = `FINAL OPERATIONAL SCORE: ${player.score}`;
+                        playSynthSound(90, 'sawtooth', 0.8, 0.3);
+                    }
+                    continue;
+                }
+
+                // Bullet intersections hit-boxes tests
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    let b = bullets[j];
+                    if (Math.hypot(b.x - e.x, b.y - e.y) < e.radius + 3) {
+                        e.hp -= b.damage;
+                        bullets.splice(j, 1);
+                        playSynthSound(600, 'triangle', 0.04, 0.05);
+
+                        if (e.hp <= 0) {
+                            player.score += e.points;
+                            addSplatter(e.x, e.y, "rgba(160, 30, 30, 0.7)"); // Drop impact spray mark down
+                            enemies.splice(i, 1);
+                            updateHudDisplay();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 5. Medkits / Ammo Crates Intercept Sweeps
+            handleSpawningItems();
+            for (let i = items.length - 1; i >= 0; i--) {
+                let it = items[i];
+                if (Math.hypot(player.x - it.x, player.y - it.y) < player.radius + it.radius) {
+                    if (it.type === "MEDKIT") {
+                        player.hp = Math.min(100, player.hp + 35);
+                        playSynthSound(650, 'sine', 0.2, 0.1);
+                    } else if (it.type === "AMMO") {
+                        if (player.weapon.reserve !== Infinity) player.weapon.reserve += player.weapon.maxAmmo * 2;
+                        playSynthSound(450, 'square', 0.15, 0.1);
+                    }
+                    items.splice(i, 1);
+                    updateHudDisplay();
+                }
+            }
+        }
+
+        // --- DRAW LAYER LOGIC ---
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Tactical Dark Mesh Background
+            ctx.fillStyle = "#141c14";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = "#1b261b";
+            ctx.lineWidth = 1;
+            for(let x=0; x<canvas.width; x+=50) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+            for(let y=0; y<canvas.height; y+=50) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
+
+            // Render Static Painted Impact Splatter Arrays (Drawn under actors)
+            splatters.forEach(s => {
+                ctx.fillStyle = s.color;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Tactical Obstacles / Cover Modules
+            ctx.fillStyle = "#2a362a";
+            ctx.strokeStyle = "#3d4f3d";
+            ctx.lineWidth = 3;
+            walls.forEach(w => {
+                ctx.fillRect(w.x, w.y, w.w, w.h);
+                ctx.strokeRect(w.x, w.y, w.w, w.h);
+            });
+
+            // Draw Pickups (Medkit / Ammo Box)
+            items.forEach(it => {
+                ctx.fillStyle = it.color;
+                ctx.fillRect(it.x - 8, it.y - 8, 16, 16);
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 11px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText(it.type[0], it.x, it.y + 4);
+            });
+
+            // Draw Bullets
+            ctx.fillStyle = "#ffffaa";
+            bullets.forEach(b => {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Threat Forces (Enemies)
+            enemies.forEach(e => {
+                ctx.fillStyle = e.color;
+                ctx.beginPath();
+                ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Direction line drawing pointer
+                let a = Math.atan2(player.y - e.y, player.x - e.x);
+                ctx.strokeStyle = "#000";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(e.x, e.y);
+                ctx.lineTo(e.x + Math.cos(a)*e.radius, e.y + Math.sin(a)*e.radius);
+                ctx.stroke();
+            });
+
+            // Draw Main Character Operator Actor Unit
+            if (gameState === "PLAYING") {
+                ctx.save();
+                ctx.translate(player.x, player.y);
+                ctx.rotate(player.angle);
+
+                // Body circle frame profile
+                ctx.fillStyle = "#2d5a2d";
+                ctx.strokeStyle = "#4dff4d";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Weapon Extension Barrel component layout
+                ctx.fillStyle = "#666";
+                let len = player.weapon.name === "SHOTGUN" ? 22 : 18;
+                ctx.fillRect(0, -3, len, 6);
+
+                ctx.restore();
+            }
+        }
+
+        function showMainMenu() {
+            gameOverMenu.classList.add('hidden');
+            mainMenu.classList.remove('hidden');
+            gameState = "MENU";
+        }
+
+        // Loop Runner Driver
+        function runEngine() {
+            update();
+            draw();
+            requestAnimationFrame(runEngine);
+        }
+
+        runEngine();
+    </script>
+</body>
+</html>
